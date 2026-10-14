@@ -12,26 +12,30 @@ const TOKEN_PATH = join(homedir(), '.config/discord-search/token');
 let db;
 const getDb = () => (db ??= open(DB_PATH));
 
+// Clients such as Executor show only the tool description, so it carries the argument semantics.
 const TOOLS = [
   {
     name: 'discord_search',
-    description:
-      'Search a local archive of Discord messages from every channel and thread the bot can read. ' +
-      'Query uses SQLite FTS5: words are ANDed and stemmed; "exact phrase", OR, NOT, prefix*, NEAR(a b, 5). ' +
-      'Omit query to browse by filters, e.g. a channel\'s latest messages, or sort:"oldest" with after to read forward. ' +
-      'Each result has its channel, a jump link, and time (UTC) author: text; ↩ marks a reply. ' +
-      'The header says when the archive was last synced; call discord_sync first if you need newer messages.',
+    description: [
+      'Search the team Discord chat history (local archive of every channel and thread the bot can read).',
+      'query: SQLite FTS5, words ANDed and stemmed; "exact phrase", OR, NOT, prefix*, NEAR(a b, 5). Omit it to browse by filters.',
+      'channel: name or id, includes its threads. author: display name or username substring, or user id.',
+      'after/before: ISO date/time or message id, exclusive. sort: relevance (default with query) | newest (default without) | oldest.',
+      'context: messages shown before/after each hit, default 0. limit: default 20, max 200.',
+      'Output: header with result count and last sync time, then per hit the channel, jump link, and "time(UTC) author: text" lines; ↩ marks a reply.',
+      'Call discord_sync first when you need messages newer than the last sync.',
+    ].join('\n'),
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'FTS5 query. Omit to list by filters only.' },
-        channel: { type: 'string', description: 'Channel name or id; includes its threads.' },
-        author: { type: 'string', description: 'Display name, username (substring) or user id.' },
-        after: { type: 'string', description: 'ISO date/time or message id (exclusive).' },
-        before: { type: 'string', description: 'ISO date/time or message id (exclusive).' },
-        sort: { type: 'string', enum: ['relevance', 'newest', 'oldest'], description: 'Default relevance with a query, else newest.' },
-        context: { type: 'integer', minimum: 0, maximum: 20, description: 'Messages to show before and after each hit. Default 0.' },
-        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Default 20.' },
+        query: { type: 'string' },
+        channel: { type: 'string' },
+        author: { type: 'string' },
+        after: { type: 'string' },
+        before: { type: 'string' },
+        sort: { type: 'string', enum: ['relevance', 'newest', 'oldest'] },
+        context: { type: 'integer', minimum: 0, maximum: 20 },
+        limit: { type: 'integer', minimum: 1, maximum: 200 },
       },
       additionalProperties: false,
     },
@@ -39,15 +43,14 @@ const TOOLS = [
   },
   {
     name: 'discord_sync',
-    description:
-      'Fetch new Discord messages into the local archive; incremental and safe to call any time. ' +
-      'The first run backfills full history and may need several calls: repeat while it reports Partial. ' +
+    description: [
+      'Fetch new team Discord messages into the local archive that discord_search reads. Incremental; seconds when little changed.',
+      'The first run backfills full history: repeat while it reports Partial. budget_seconds: stop after this long, default 50.',
       'Captures new messages only; later edits and deletions are not reflected.',
+    ].join('\n'),
     inputSchema: {
       type: 'object',
-      properties: {
-        budget_seconds: { type: 'integer', minimum: 5, maximum: 600, description: 'Stop after this long. Default 50.' },
-      },
+      properties: { budget_seconds: { type: 'integer', minimum: 5, maximum: 600 } },
       additionalProperties: false,
     },
     annotations: { title: 'Sync Discord', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
