@@ -22,7 +22,7 @@ const TOOLS = [
       'channel: name or id, includes its threads. author: display name or username substring, or user id.',
       'after/before: ISO date/time or message id, exclusive. sort: relevance (default with query) | newest (default without) | oldest.',
       'context: messages shown before/after each hit, default 0. limit: default 20, max 200.',
-      'Output: header with result count and last sync time, then per hit the channel, jump link, and "time(UTC) author: text" lines; ↩ marks a reply.',
+      'Times are UTC; ↩ marks a reply.',
       'Call discord_sync first when you need messages newer than the last sync.',
     ].join('\n'),
     inputSchema: {
