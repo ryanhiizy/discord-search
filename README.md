@@ -31,5 +31,16 @@ Only new messages are captured; later edits and deletions are not reflected.
    From another machine, run it over SSH so there is one database:
    `{ "command": "ssh", "args": ["-o", "BatchMode=yes", "HOST", "node", "/abs/path/discord-search/src/server.mjs"] }`.
 
+5. Keep the archive fresh with a scheduled sync, so agents rarely call
+   `discord_sync` themselves. With systemd (`loginctl enable-linger` keeps user
+   timers running while logged out):
+
+   ```sh
+   mkdir -p ~/.config/systemd/user && cd ~/.config/systemd/user
+   printf '[Service]\nType=oneshot\nEnvironment=PATH=%%h/.local/bin:/usr/local/bin:/usr/bin\nExecStart=/usr/bin/env node %s sync\n' "/abs/path/discord-search/src/server.mjs" > discord-search-sync.service
+   printf '[Timer]\nOnBootSec=1min\nOnUnitActiveSec=5min\n\n[Install]\nWantedBy=timers.target\n' > discord-search-sync.timer
+   systemctl --user daemon-reload && systemctl --user enable --now discord-search-sync.timer
+   ```
+
 The database lives at `~/.local/share/discord-search/discord.db`; override with
 `DISCORD_SEARCH_DB`.

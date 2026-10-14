@@ -23,7 +23,7 @@ const TOOLS = [
       'after/before: ISO date/time or message id, exclusive. sort: relevance (default with query) | newest (default without) | oldest.',
       'context: messages shown before/after each hit, default 0. limit: default 20, max 200.',
       'Times are UTC; ↩ marks a reply.',
-      'Call discord_sync first when you need messages newer than the last sync.',
+      'A scheduled sync keeps the archive minutes old (header shows its age); call discord_sync only for messages newer than that.',
     ].join('\n'),
     inputSchema: {
       type: 'object',
@@ -61,13 +61,15 @@ function readToken() {
   }
 }
 
+function syncNow(options) {
+  const token = process.env.DISCORD_TOKEN || readToken();
+  if (!token) throw new Error(`No bot token: set DISCORD_TOKEN or write it to ${TOKEN_PATH}.`);
+  return sync(getDb(), client(token), options);
+}
+
 async function callTool(name, args = {}) {
   if (name === 'discord_search') return search(getDb(), args);
-  if (name === 'discord_sync') {
-    const token = process.env.DISCORD_TOKEN || readToken();
-    if (!token) throw new Error(`No bot token: set DISCORD_TOKEN or write it to ${TOKEN_PATH}.`);
-    return sync(getDb(), client(token));
-  }
+  if (name === 'discord_sync') return syncNow();
   throw new Error(`Unknown tool: ${name}`);
 }
 
@@ -96,6 +98,12 @@ async function handle(msg) {
 }
 
 const send = (obj) => process.stdout.write(`${JSON.stringify(obj)}\n`);
+
+// `server.mjs sync` runs one unbounded sync for schedulers, then exits.
+if (process.argv[2] === 'sync') {
+  console.log(await syncNow({ budgetMs: 15 * 60_000 }));
+  process.exit(0);
+}
 
 createInterface({ input: process.stdin }).on('line', async (line) => {
   if (!line.trim()) return;
