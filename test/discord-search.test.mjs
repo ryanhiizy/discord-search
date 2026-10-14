@@ -59,6 +59,12 @@ test('sync backfills, then only fetches what changed', async () => {
   assert.deepEqual(d.calls.filter((c) => c.includes('/messages')), [], 'no message fetches when nothing is new');
   assert.doesNotMatch(second, /secret/, 'denied channel is not retried until it changes');
 
+  d.channels[1].last_message_id = sid(350); // newest message was deleted
+  assert.match(await sync(db, get), /^Up to date: \+0/);
+  d.calls.length = 0;
+  assert.match(await sync(db, get), /^Up to date: \+0/);
+  assert.deepEqual(d.calls.filter((c) => c.includes('/messages')), [], 'deleted last message does not leave the channel pending');
+
   d.general.push({ id: sid(400), type: 0, content: 'new deploy note', author: { id: '9', username: 'alice' } });
   d.channels[1].last_message_id = d.general.at(-1).id;
   assert.match(await sync(db, get), /\+1 messages from 1 channels/);

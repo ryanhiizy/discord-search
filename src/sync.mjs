@@ -126,7 +126,8 @@ export async function sync(db, get, { budgetMs = 50_000 } = {}) {
   await pool(work, async (ch) => {
     let cursor = ch.cursor;
     let touched = false;
-    while (Date.now() < deadline) {
+    let done = false;
+    while (!done && Date.now() < deadline) {
       let page;
       try {
         page = await get(`/channels/${ch.id}/messages?limit=100&after=${cursor}`);
@@ -141,6 +142,7 @@ export async function sync(db, get, { budgetMs = 50_000 } = {}) {
         }
         return;
       }
+      done = page.length < 100;
       if (!page.length) break;
       const rows = [];
       for (const m of page) {
@@ -166,10 +168,11 @@ export async function sync(db, get, { budgetMs = 50_000 } = {}) {
         return n;
       });
       touched = true;
-      if (page.length < 100) break;
     }
     if (touched) stats.channels++;
-    if (cursor < ch.last) stats.pending++;
+    // Reached the end: anything up to the listed last_message_id is fetched or was deleted.
+    if (done && cursor < ch.last) setCursor.run(ch.last, ch.id);
+    else if (!done) stats.pending++;
   });
 
   setMeta(db, 'synced_at', new Date(started).toISOString());
