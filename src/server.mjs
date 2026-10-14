@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Minimal MCP stdio server: newline-delimited JSON-RPC, two tools.
+import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,7 @@ import { open, search } from './store.mjs';
 import { client, sync } from './sync.mjs';
 
 const DB_PATH = process.env.DISCORD_SEARCH_DB || join(homedir(), '.local/share/discord-search/discord.db');
+const TOKEN_PATH = join(homedir(), '.config/discord-search/token');
 let db;
 const getDb = () => (db ??= open(DB_PATH));
 
@@ -52,11 +54,19 @@ const TOOLS = [
   },
 ];
 
+function readToken() {
+  try {
+    return readFileSync(TOKEN_PATH, 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
 async function callTool(name, args = {}) {
   if (name === 'discord_search') return search(getDb(), args);
   if (name === 'discord_sync') {
-    const token = process.env.DISCORD_TOKEN;
-    if (!token) throw new Error('DISCORD_TOKEN is not set.');
+    const token = process.env.DISCORD_TOKEN || readToken();
+    if (!token) throw new Error(`No bot token: set DISCORD_TOKEN or write it to ${TOKEN_PATH}.`);
     return sync(getDb(), client(token), { budgetMs: (args.budget_seconds ?? 50) * 1000 });
   }
   throw new Error(`Unknown tool: ${name}`);

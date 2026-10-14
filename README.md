@@ -20,12 +20,16 @@ Only new messages are captured; later edits and deletions are not reflected.
 2. Invite the bot with the `bot` scope and **View Channels** + **Read Message
    History**:
    `https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot&permissions=66560`
-3. Register the stdio server with your MCP client, passing `DISCORD_TOKEN` in its
-   environment:
+3. Save the token where the server reads it (or pass `DISCORD_TOKEN` instead):
 
-   ```json
-   { "command": "node", "args": ["/abs/path/discord-search/src/server.mjs"], "env": { "DISCORD_TOKEN": "..." } }
+   ```sh
+   mkdir -p ~/.config/discord-search && (umask 077; read -rs 'T?Token: ' && printf '%s' "$T" > ~/.config/discord-search/token)
    ```
+
+4. Register the stdio server with each MCP client:
+   `{ "command": "node", "args": ["/abs/path/discord-search/src/server.mjs"] }`.
+   From another machine, run it over SSH so there is one database:
+   `{ "command": "ssh", "args": ["-o", "BatchMode=yes", "HOST", "/abs/node", "/abs/path/discord-search/src/server.mjs"] }`.
 
 The database lives at `~/.local/share/discord-search/discord.db`; override with
 `DISCORD_SEARCH_DB`.
