@@ -29,7 +29,7 @@ Only new messages are captured; later edits and deletions are not reflected.
 4. Register the stdio server with each MCP client:
    `{ "command": "node", "args": ["/abs/path/discord-search/src/server.mjs"] }`.
    From another machine, run it over SSH so there is one database:
-   `{ "command": "ssh", "args": ["-o", "BatchMode=yes", "HOST", "/abs/node", "/abs/path/discord-search/src/server.mjs"] }`.
+   `{ "command": "ssh", "args": ["-o", "BatchMode=yes", "HOST", "node", "/abs/path/discord-search/src/server.mjs"] }`.
 
 The database lives at `~/.local/share/discord-search/discord.db`; override with
 `DISCORD_SEARCH_DB`.
