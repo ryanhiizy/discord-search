@@ -34,10 +34,10 @@ function fakeDiscord() {
     if (path === '/guilds/1/channels') return json(channels);
     if (path === '/guilds/1/threads/active') return json({ threads: [] });
     if (path.startsWith('/channels/13/threads/archived/public')) return json(archived);
+    if (path.startsWith('/channels/12/')) return json({ message: 'Missing Access' }, 403);
     if (path.includes('/threads/archived/')) return json({ threads: [], has_more: false });
     if (path.startsWith('/channels/11/messages')) return json(page(general, q.get('after')));
     if (path.startsWith('/channels/14/messages')) return json(page(thread, q.get('after')));
-    if (path.startsWith('/channels/12/messages')) return json({ message: 'Missing Access' }, 403);
     throw new Error(`unexpected ${path}`);
   };
   return { fetchImpl, calls, general, channels };
@@ -58,6 +58,7 @@ test('sync backfills, then only fetches what changed', async () => {
   assert.match(second, /\+0 messages from 0 channels/);
   assert.deepEqual(d.calls.filter((c) => c.includes('/messages')), [], 'no message fetches when nothing is new');
   assert.doesNotMatch(second, /secret/, 'denied channel is not retried while its permissions are unchanged');
+  assert.deepEqual(d.calls.filter((c) => c.startsWith('/channels/12/')), [], 'no requests at all to a denied channel');
   d.channels[2].permission_overwrites = [{ id: 'bot', type: 1, allow: '66560', deny: '0' }];
   assert.match(await sync(db, get), /No access .*#secret/, 'retried after a permission change');
 
@@ -75,8 +76,8 @@ test('sync backfills, then only fetches what changed', async () => {
 test('sync stops at the budget and resumes', async () => {
   const db = open(':memory:');
   const get = client('x', fakeDiscord().fetchImpl);
-  assert.match(await sync(db, get, { budgetMs: -1 }), /Partial: \+0 .*\n3 channels still have older history/);
-  assert.match(search(db, { query: 'deploy' }), /3 channels still backfilling/);
+  assert.match(await sync(db, get, { budgetMs: -1 }), /Partial: \+0 .*\n2 channels still have older history/);
+  assert.match(search(db, { query: 'deploy' }), /2 channels still backfilling/);
   assert.match(await sync(db, get), /Up to date: \+251/);
 });
 

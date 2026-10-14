@@ -60,7 +60,7 @@ async function archivedThreads(get, parentId, since) {
     try {
       page = await get(`/channels/${parentId}/threads/archived/public?limit=100${before}`);
     } catch (err) {
-      if (err.status === 403) return out;
+      if (err.status === 403) return null;
       throw err;
     }
     out.push(...page.threads);
@@ -90,6 +90,7 @@ export async function sync(db, get, { budgetMs = 50_000 } = {}) {
      ON CONFLICT DO UPDATE SET parent_id = excluded.parent_id, name = excluded.name, type = excluded.type`,
   );
   const state = db.prepare('SELECT cursor, blocked, blocked_at, threads_scanned FROM channels WHERE id = ?');
+  const setBlocked = db.prepare('UPDATE channels SET blocked = ?, blocked_at = ? WHERE id = ?');
 
   const work = [];
   for (const g of await get('/users/@me/guilds')) {
@@ -98,11 +99,21 @@ export async function sync(db, get, { budgetMs = 50_000 } = {}) {
     const all = [...chans, ...active.threads];
     tx(db, () => all.forEach((c) => upsertChannel.run(c.id, g.id, c.parent_id ?? null, c.name, c.type)));
 
+    // A denied channel is skipped until its (or its parent's) permission overwrites change,
+    // or hourly to catch role changes.
+    const perms = new Map(chans.map((c) => [c.id, JSON.stringify(c.permission_overwrites ?? [])]));
+    const accessOf = (c) => perms.get(c.id) ?? perms.get(c.parent_id) ?? '';
+    const isDenied = (c, s) => s.blocked === accessOf(c) && Date.now() - Number(s.blocked_at) < RETRY_DENIED_MS;
+
     const scanAt = new Date().toISOString();
     await pool(
-      chans.filter((c) => THREAD_PARENTS.has(c.type)),
+      chans.filter((c) => THREAD_PARENTS.has(c.type) && !isDenied(c, state.get(c.id))),
       async (parent) => {
         const threads = await archivedThreads(get, parent.id, state.get(parent.id).threads_scanned);
+        if (!threads) {
+          setBlocked.run(accessOf(parent), Date.now(), parent.id);
+          return stats.denied.push(`#${parent.name}`);
+        }
         tx(db, () => {
           threads.forEach((t) => upsertChannel.run(t.id, g.id, t.parent_id, t.name, t.type));
           db.prepare('UPDATE channels SET threads_scanned = ? WHERE id = ?').run(scanAt, parent.id);
@@ -111,21 +122,16 @@ export async function sync(db, get, { budgetMs = 50_000 } = {}) {
       },
     );
 
-    // Only channels whose newest message is past our cursor cost a request. A denied channel is
-    // retried when its (or its parent's) permission overwrites change, or hourly for role changes.
-    const perms = new Map(chans.map((c) => [c.id, JSON.stringify(c.permission_overwrites ?? [])]));
+    // Only channels whose newest message is past our cursor cost a request.
     for (const c of all) {
       if (!MESSAGE_TYPES.has(c.type) || !c.last_message_id) continue;
       const s = state.get(c.id);
       const last = BigInt(c.last_message_id);
-      const access = perms.get(c.id) ?? perms.get(c.parent_id) ?? '';
-      const denied = s.blocked === access && Date.now() - Number(s.blocked_at) < RETRY_DENIED_MS;
-      if (last > BigInt(s.cursor) && !denied) work.push({ id: c.id, cursor: BigInt(s.cursor), last, access });
+      if (last > BigInt(s.cursor) && !isDenied(c, s)) work.push({ id: c.id, cursor: BigInt(s.cursor), last, access: accessOf(c) });
     }
   }
 
   const setCursor = db.prepare('UPDATE channels SET cursor = ?, blocked = NULL, blocked_at = NULL WHERE id = ?');
-  const setBlocked = db.prepare('UPDATE channels SET blocked = ?, blocked_at = ? WHERE id = ?');
   const names = db.prepare('SELECT name FROM channels WHERE id = ?');
 
   await pool(work, async (ch) => {
