@@ -29,9 +29,3 @@ Only new messages are captured; later edits and deletions are not reflected.
 
 The database lives at `~/.local/share/discord-search/discord.db`; override with
 `DISCORD_SEARCH_DB`.
-
-## Development
-
-```sh
-npm test
-```
