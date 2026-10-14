@@ -23,7 +23,7 @@ const TOOLS = [
       'after/before: ISO date/time or message id, exclusive. sort: relevance (default with query) | newest (default without) | oldest.',
       'context: messages shown before/after each hit, default 0. limit: default 20, max 200.',
       'Times are UTC; ↩ marks a reply.',
-      'A scheduled sync keeps the archive minutes old (header shows its age); call discord_sync only for messages newer than that.',
+      'Synced every few minutes; the header shows when.',
     ].join('\n'),
     inputSchema: {
       type: 'object',
