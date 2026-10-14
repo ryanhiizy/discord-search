@@ -45,14 +45,10 @@ const TOOLS = [
     name: 'discord_sync',
     description: [
       'Fetch new team Discord messages into the local archive that discord_search reads. Incremental; seconds when little changed.',
-      'The first run backfills full history: repeat while it reports Partial. budget_seconds: stop after this long, default 50.',
+      'Each call stops after about 50s; the first run backfills full history, so repeat while it reports Partial.',
       'Captures new messages only; later edits and deletions are not reflected.',
     ].join('\n'),
-    inputSchema: {
-      type: 'object',
-      properties: { budget_seconds: { type: 'integer', minimum: 5, maximum: 600 } },
-      additionalProperties: false,
-    },
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { title: 'Sync Discord', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
 ];
@@ -70,7 +66,7 @@ async function callTool(name, args = {}) {
   if (name === 'discord_sync') {
     const token = process.env.DISCORD_TOKEN || readToken();
     if (!token) throw new Error(`No bot token: set DISCORD_TOKEN or write it to ${TOKEN_PATH}.`);
-    return sync(getDb(), client(token), { budgetMs: (args.budget_seconds ?? 50) * 1000 });
+    return sync(getDb(), client(token));
   }
   throw new Error(`Unknown tool: ${name}`);
 }
