@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS channels (
   name TEXT NOT NULL,
   type INTEGER NOT NULL,
   cursor INTEGER NOT NULL DEFAULT 0,  -- newest stored message id
-  blocked_at INTEGER,                  -- last_message_id when access was denied
+  blocked TEXT,                        -- permission overwrites when access was denied
+  blocked_at INTEGER,                  -- when access was denied (ms)
   threads_scanned TEXT                 -- ISO time of last archived-thread scan
 );
 CREATE TABLE IF NOT EXISTS messages (

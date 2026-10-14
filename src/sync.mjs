@@ -4,6 +4,7 @@ const API = 'https://discord.com/api/v10';
 const MESSAGE_TYPES = new Set([0, 2, 5, 10, 11, 12, 13]); // text, voice, news, threads, stage
 const THREAD_PARENTS = new Set([0, 5, 15, 16]); // text, news, forum, media
 const CONCURRENCY = 8;
+const RETRY_DENIED_MS = 3600_000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function client(token, fetchImpl = fetch) {
@@ -88,7 +89,7 @@ export async function sync(db, get, { budgetMs = 50_000 } = {}) {
     `INSERT INTO channels (id, guild_id, parent_id, name, type) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT DO UPDATE SET parent_id = excluded.parent_id, name = excluded.name, type = excluded.type`,
   );
-  const state = db.prepare('SELECT cursor, blocked_at, threads_scanned FROM channels WHERE id = ?');
+  const state = db.prepare('SELECT cursor, blocked, blocked_at, threads_scanned FROM channels WHERE id = ?');
 
   const work = [];
   for (const g of await get('/users/@me/guilds')) {
@@ -110,17 +111,21 @@ export async function sync(db, get, { budgetMs = 50_000 } = {}) {
       },
     );
 
-    // Only channels whose newest message is past our cursor cost a request.
+    // Only channels whose newest message is past our cursor cost a request. A denied channel is
+    // retried when its (or its parent's) permission overwrites change, or hourly for role changes.
+    const perms = new Map(chans.map((c) => [c.id, JSON.stringify(c.permission_overwrites ?? [])]));
     for (const c of all) {
       if (!MESSAGE_TYPES.has(c.type) || !c.last_message_id) continue;
       const s = state.get(c.id);
       const last = BigInt(c.last_message_id);
-      if (last > BigInt(s.cursor) && s.blocked_at !== last) work.push({ id: c.id, cursor: BigInt(s.cursor), last });
+      const access = perms.get(c.id) ?? perms.get(c.parent_id) ?? '';
+      const denied = s.blocked === access && Date.now() - Number(s.blocked_at) < RETRY_DENIED_MS;
+      if (last > BigInt(s.cursor) && !denied) work.push({ id: c.id, cursor: BigInt(s.cursor), last, access });
     }
   }
 
-  const setCursor = db.prepare('UPDATE channels SET cursor = ?, blocked_at = NULL WHERE id = ?');
-  const setBlocked = db.prepare('UPDATE channels SET blocked_at = ? WHERE id = ?');
+  const setCursor = db.prepare('UPDATE channels SET cursor = ?, blocked = NULL, blocked_at = NULL WHERE id = ?');
+  const setBlocked = db.prepare('UPDATE channels SET blocked = ?, blocked_at = ? WHERE id = ?');
   const names = db.prepare('SELECT name FROM channels WHERE id = ?');
 
   await pool(work, async (ch) => {
@@ -134,7 +139,7 @@ export async function sync(db, get, { budgetMs = 50_000 } = {}) {
       } catch (err) {
         const name = `#${names.get(ch.id)?.name ?? ch.id}`;
         if (err.status === 403 || err.status === 404) {
-          setBlocked.run(ch.last, ch.id);
+          setBlocked.run(ch.access, Date.now(), ch.id);
           stats.denied.push(name);
         } else {
           stats.failed.push(`${name} (${err.message})`);

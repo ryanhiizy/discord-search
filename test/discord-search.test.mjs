@@ -57,7 +57,9 @@ test('sync backfills, then only fetches what changed', async () => {
   const second = await sync(db, get);
   assert.match(second, /\+0 messages from 0 channels/);
   assert.deepEqual(d.calls.filter((c) => c.includes('/messages')), [], 'no message fetches when nothing is new');
-  assert.doesNotMatch(second, /secret/, 'denied channel is not retried until it changes');
+  assert.doesNotMatch(second, /secret/, 'denied channel is not retried while its permissions are unchanged');
+  d.channels[2].permission_overwrites = [{ id: 'bot', type: 1, allow: '66560', deny: '0' }];
+  assert.match(await sync(db, get), /No access .*#secret/, 'retried after a permission change');
 
   d.channels[1].last_message_id = sid(350); // newest message was deleted
   assert.match(await sync(db, get), /^Up to date: \+0/);
