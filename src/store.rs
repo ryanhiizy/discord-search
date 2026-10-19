@@ -9,8 +9,9 @@ const EPOCH: i64 = 1420070400000;
 pub fn id_to_ms(id: i64) -> i64 {
     (id >> 22) + EPOCH
 }
-pub fn ms_to_id(ms: i64) -> i64 {
-    (ms - EPOCH) << 22
+/// None when the time is too far out for a snowflake.
+pub fn ms_to_id(ms: i64) -> Option<i64> {
+    (ms - EPOCH).checked_mul(1 << 22)
 }
 
 const SCHEMA: &str = "
@@ -168,11 +169,19 @@ pub fn parse_iso(s: &str) -> Option<i64> {
         } else if let Some(sign) = rest.chars().next().filter(|c| *c == '+' || *c == '-') {
             let (oh, r) = num(&rest[1..], 2)?;
             let (om, r) = num(sep(r, ':').unwrap_or(r), 2)?;
+            if oh > 23 || om > 59 {
+                return None;
+            }
             offset = (oh * 60 + om) * if sign == '-' { -60_000 } else { 60_000 };
             rest = r;
         }
     }
-    let valid = rest.is_empty() && (1..=12).contains(&mo) && (1..=31).contains(&d) && h <= 24 && mi < 60 && sec < 60;
+    let valid = rest.is_empty()
+        && (1..=12).contains(&mo)
+        && (1..=31).contains(&d)
+        && (h < 24 || (h == 24 && mi == 0 && sec == 0 && ms == 0))
+        && mi < 60
+        && sec < 60;
     valid.then(|| days_from_civil(y, mo, d) * 86_400_000 + ((h * 60 + mi) * 60 + sec) * 1000 + ms - offset)
 }
 
@@ -204,7 +213,7 @@ fn bound(value: &str, name: &str) -> Result<i64, Error> {
         return Ok(id);
     }
     parse_iso(value)
-        .map(ms_to_id)
+        .and_then(ms_to_id)
         .ok_or_else(|| Error(format!("{name}: expected ISO date or message id, got \"{value}\"")))
 }
 
