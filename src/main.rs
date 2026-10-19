@@ -67,7 +67,7 @@ fn tools() -> Value {
                 "channel: name or id, includes its threads. author: display name or username substring, or user id.",
                 "after/before: ISO date/time or message id, exclusive. sort: relevance (default with query) | newest (default without) | oldest.",
                 "context: messages shown before/after each hit, default 0. limit: default 20, max 200.",
-                "Times are local time, as are after/before without an offset; ↩ marks a reply.",
+                "Times are local time; ↩ marks a reply.",
                 "Synced every few minutes; the header shows when.",
             ].join("\n")),
             "inputSchema": {
