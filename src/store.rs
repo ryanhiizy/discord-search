@@ -68,8 +68,10 @@ pub fn set_meta(db: &Connection, key: &str, value: &str) -> Result<(), Error> {
 
 pub fn tx<T>(db: &Connection, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
     db.execute_batch("BEGIN IMMEDIATE")?;
-    let result = f();
-    db.execute_batch(if result.is_ok() { "COMMIT" } else { "ROLLBACK" })?;
+    let result = f().and_then(|value| Ok(db.execute_batch("COMMIT").map(|()| value)?));
+    if result.is_err() && !db.is_autocommit() {
+        db.execute_batch("ROLLBACK")?;
+    }
     result
 }
 
