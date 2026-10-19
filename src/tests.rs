@@ -250,3 +250,17 @@ fn bom_counts_as_whitespace() {
     sync(&db, &Client::new("x", &fetch), 50_000).unwrap();
     matches(&search(&db.lock().unwrap(), &args(json!({ "query": "\u{feff}" }))).unwrap(), "^20\\+ results, newest");
 }
+
+#[test]
+fn date_times_without_offset_are_local() {
+    for (text, fields) in
+        [("2026-07-04T05:06:07.5", (126, 6, 4, 5, 6, 7)), ("2026-01-01 23:59", (126, 0, 1, 23, 59, 0))]
+    {
+        let ms = parse_iso(text).unwrap();
+        // SAFETY: tm is plain data filled by localtime_r.
+        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+        unsafe { libc::localtime_r(&(ms.div_euclid(1000) as libc::time_t), &mut tm) };
+        assert_eq!((tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec), fields, "{text}");
+        assert_eq!(ms.rem_euclid(1000), if text.ends_with(".5") { 500 } else { 0 });
+    }
+}
