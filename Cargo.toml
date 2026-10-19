@@ -1,0 +1,20 @@
+[package]
+name = "discord-search"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

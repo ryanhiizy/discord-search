@@ -1,7 +1,8 @@
 # discord-search
 
 MCP server that keeps a local, full-text-searchable copy of a Discord server for
-agents. Two tools, no dependencies, Node 22.13+ (built-in `node:sqlite` with FTS5).
+agents. One Rust binary (~1.4 MB, ~3 MB idle RSS) with bundled SQLite FTS5; HTTPS
+goes through the system `curl`.
 
 - `discord_sync` fetches new messages from every channel and thread the bot can
   read. The first run backfills full history in budgeted passes; later runs only
@@ -26,21 +27,23 @@ Only new messages are captured; later edits and deletions are not reflected.
    mkdir -p ~/.config/discord-search && (umask 077; read -rs 'T?Token: ' && printf '%s' "$T" > ~/.config/discord-search/token)
    ```
 
-4. Register the stdio server with each MCP client:
-   `{ "command": "node", "args": ["/abs/path/discord-search/src/server.mjs"] }`.
+4. Install from the repo root (it carries the SQLite build flags):
+   `cargo install --locked --path . --root ~/.local`
+5. Register the stdio server with each MCP client:
+   `{ "command": "/abs/home/.local/bin/discord-search" }`.
    From another machine, run it over SSH so there is one database:
-   `{ "command": "ssh", "args": ["-o", "BatchMode=yes", "HOST", "node", "/abs/path/discord-search/src/server.mjs"] }`.
+   `{ "command": "ssh", "args": ["-o", "BatchMode=yes", "HOST", ".local/bin/discord-search"] }`.
 
-5. Keep the archive fresh with a scheduled sync, so agents rarely call
-   `discord_sync` themselves. With systemd (`loginctl enable-linger` keeps user
-   timers running while logged out):
+6. Keep the archive fresh with a scheduled sync (`discord-search sync`, 15 min
+   budget), so agents rarely call `discord_sync` themselves. With systemd
+   (`loginctl enable-linger` keeps user timers running while logged out):
 
    ```sh
    mkdir -p ~/.config/systemd/user && cd ~/.config/systemd/user
-   printf '[Service]\nType=oneshot\nEnvironment=PATH=%%h/.local/bin:/usr/local/bin:/usr/bin\nExecStart=/usr/bin/env node %s sync\n' "/abs/path/discord-search/src/server.mjs" > discord-search-sync.service
+   printf '[Service]\nType=oneshot\nExecStart=%%h/.local/bin/discord-search sync\n' > discord-search-sync.service
    printf '[Timer]\nOnBootSec=1min\nOnUnitActiveSec=5min\n\n[Install]\nWantedBy=timers.target\n' > discord-search-sync.timer
    systemctl --user daemon-reload && systemctl --user enable --now discord-search-sync.timer
    ```
 
 The database lives at `~/.local/share/discord-search/discord.db`; override with
-`DISCORD_SEARCH_DB`.
+`DISCORD_SEARCH_DB`. Dates without an offset are read as UTC.
