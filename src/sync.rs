@@ -133,6 +133,13 @@ impl<'a> Client<'a> {
     }
 }
 
+fn array(v: Value, what: &str) -> Result<Vec<Value>, Fail> {
+    match v {
+        Value::Array(list) => Ok(list),
+        _ => Err(Fail { status: 0, message: format!("Discord returned malformed {what}") }),
+    }
+}
+
 fn id(v: &Value) -> Option<i64> {
     v.as_str()?.parse().ok()
 }
@@ -183,12 +190,12 @@ fn archived_threads(get: &Client, parent_id: i64, since: Option<&str>) -> Result
     let mut out = Vec::new();
     let mut before = String::new();
     loop {
-        let page = match get.get(&format!("/channels/{parent_id}/threads/archived/public?limit=100{before}")) {
+        let mut page = match get.get(&format!("/channels/{parent_id}/threads/archived/public?limit=100{before}")) {
             Ok(page) => page,
             Err(f) if f.status == 403 => return Ok(None),
             Err(f) => return Err(f.into()),
         };
-        let threads = page["threads"].as_array().cloned().unwrap_or_default();
+        let threads = array(page["threads"].take(), "threads")?;
         let last = threads.last().and_then(|t| t["thread_metadata"]["archive_timestamp"].as_str()).map(String::from);
         out.extend(threads);
         match last {
@@ -277,7 +284,7 @@ pub fn sync(db: &Mutex<Connection>, get: &Client, budget_ms: i64) -> Result<Stri
     let lock = || db.lock().unwrap();
 
     let mut work = Vec::new();
-    for g in get.get("/users/@me/guilds")?.as_array().cloned().unwrap_or_default() {
+    for g in array(get.get("/users/@me/guilds")?, "guilds")? {
         let gid = id(&g["id"]).ok_or_else(|| Error("Discord returned a guild without an id".into()))?;
         lock().execute(
             "INSERT INTO guilds VALUES (?, ?) ON CONFLICT DO UPDATE SET name = excluded.name",
@@ -287,9 +294,9 @@ pub fn sync(db: &Mutex<Connection>, get: &Client, budget_ms: i64) -> Result<Stri
             let active = s.spawn(|| get.get(&format!("/guilds/{gid}/threads/active")));
             (get.get(&format!("/guilds/{gid}/channels")), active.join().unwrap())
         });
-        let chans = chans?.as_array().cloned().unwrap_or_default();
+        let chans = array(chans?, "channels")?;
         let mut all: Vec<Value> = chans.clone();
-        all.extend(active?["threads"].as_array().cloned().unwrap_or_default());
+        all.extend(array(active?["threads"].take(), "threads")?);
         {
             let db = lock();
             tx(&db, || upsert_channels(&db, gid, &all))?;
@@ -360,8 +367,16 @@ pub fn sync(db: &Mutex<Connection>, get: &Client, budget_ms: i64) -> Result<Stri
         let mut touched = false;
         let mut done = false;
         while !done && now_ms() < deadline {
-            let page = match get.get(&format!("/channels/{}/messages?limit=100&after={cursor}", ch.id)) {
-                Ok(page) => page.as_array().cloned().unwrap_or_default(),
+            // A malformed page fails the channel like a network error, so the cursor never skips history.
+            let page = get
+                .get(&format!("/channels/{}/messages?limit=100&after={cursor}", ch.id))
+                .and_then(|page| array(page, "messages"))
+                .and_then(|page| match page.iter().all(|m| id(&m["id"]).is_some()) {
+                    true => Ok(page),
+                    false => Err(Fail { status: 0, message: "Discord returned a message without an id".into() }),
+                });
+            let page = match page {
+                Ok(page) => page,
                 Err(f) => {
                     let name: Option<String> =
                         lock().query_row("SELECT name FROM channels WHERE id = ?", [ch.id], |r| r.get(0)).optional()?;
@@ -384,7 +399,7 @@ pub fn sync(db: &Mutex<Connection>, get: &Client, budget_ms: i64) -> Result<Stri
             let mut rows = Vec::new();
             let mut empty = 0;
             for m in &page {
-                let Some(mid) = id(&m["id"]) else { continue };
+                let mid = id(&m["id"]).unwrap_or(0);
                 cursor = cursor.max(mid);
                 let text = text_of(m);
                 let author = &m["author"];

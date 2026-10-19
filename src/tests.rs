@@ -220,3 +220,19 @@ fn iso_times() {
     assert_eq!(parse_iso("1970-01-01T00:00:01.5Z"), Some(1500));
     assert_eq!(parse_iso("2026-13-01"), None);
 }
+
+#[test]
+fn malformed_message_page_keeps_the_cursor() {
+    let db = Mutex::new(open(":memory:").unwrap());
+    let (_, inner) = fake_discord();
+    let fetch = move |url: &str, auth: &str| match url.contains("/channels/11/messages") {
+        true => Ok(Response { status: 200, headers: vec![], body: b"{\"message\":\"odd\"}".to_vec() }),
+        false => inner(url, auth),
+    };
+    let report = sync(&db, &Client::new("x", &fetch), 50_000).unwrap();
+    matches(&report, r"^Partial: \+1 .*\n1 channels still have older history");
+    matches(&report, r"Failed: #general \(Discord returned malformed messages\)");
+    let cursor: i64 =
+        db.lock().unwrap().query_row("SELECT cursor FROM channels WHERE id = 11", [], |r| r.get(0)).unwrap();
+    assert_eq!(cursor, 0);
+}
