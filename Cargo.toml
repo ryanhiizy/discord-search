@@ -6,6 +6,7 @@ rust-version = "1.88"
 publish = false
 
 [dependencies]
+libc = "0.2"
 rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 

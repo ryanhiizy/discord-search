@@ -138,7 +138,29 @@ pub fn iso(ms: i64) -> String {
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}.{f:03}Z")
 }
 
-/// ISO date or date-time; without an offset it is UTC, as in the output.
+/// Wall-clock time in the local zone, as JS reads it: a time repeated when clocks go back
+/// is the earlier instant.
+fn local_ms(y: i64, mo: i64, d: i64, h: i64, mi: i64, sec: i64) -> i64 {
+    let wall = (y as i32 - 1900, mo as i32 - 1, d as i32, h as i32, mi as i32, sec as i32);
+    // SAFETY: tm is plain data; mktime and localtime_r only read and fill it.
+    let at = |isdst| unsafe {
+        let mut tm: libc::tm = std::mem::zeroed();
+        (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec) = wall;
+        tm.tm_isdst = isdst;
+        libc::mktime(&mut tm) // -1 is a real time here: 4-digit years cannot overflow time_t
+    };
+    let wall_of = |t| unsafe {
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&t, &mut tm);
+        (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec)
+    };
+    let (any, dst) = (at(-1), at(1));
+    let t = if dst < any && wall_of(dst) == wall { dst } else { any };
+    t * 1000
+}
+
+/// ISO date or date-time, read as JS `Date.parse` does: a date alone is UTC, a date-time
+/// without an offset is local time.
 pub fn parse_iso(s: &str) -> Option<i64> {
     fn num(s: &str, len: usize) -> Option<(i64, &str)> {
         let (head, rest) = s.split_at_checked(len)?;
@@ -155,7 +177,7 @@ pub fn parse_iso(s: &str) -> Option<i64> {
             (d, rest) = num(r, 2)?;
         }
     }
-    let mut offset = 0;
+    let mut offset = Some(0);
     if let Some(r) = sep(rest, 'T').or_else(|| sep(rest, 't')).or_else(|| sep(rest, ' ')) {
         (h, rest) = num(r, 2)?;
         (mi, rest) = num(sep(rest, ':')?, 2)?;
@@ -171,15 +193,16 @@ pub fn parse_iso(s: &str) -> Option<i64> {
                 rest = &r[digits..];
             }
         }
+        offset = None;
         if let Some(r) = sep(rest, 'Z').or_else(|| sep(rest, 'z')) {
-            rest = r;
+            (offset, rest) = (Some(0), r);
         } else if let Some(sign) = rest.chars().next().filter(|c| *c == '+' || *c == '-') {
             let (oh, r) = num(&rest[1..], 2)?;
             let (om, r) = num(sep(r, ':').unwrap_or(r), 2)?;
             if oh > 23 || om > 59 {
                 return None;
             }
-            offset = (oh * 60 + om) * if sign == '-' { -60_000 } else { 60_000 };
+            offset = Some((oh * 60 + om) * if sign == '-' { -60_000 } else { 60_000 });
             rest = r;
         }
     }
@@ -189,7 +212,14 @@ pub fn parse_iso(s: &str) -> Option<i64> {
         && (h < 24 || (h == 24 && mi == 0 && sec == 0 && ms == 0))
         && mi < 60
         && sec < 60;
-    valid.then(|| days_from_civil(y, mo, d) * 86_400_000 + ((h * 60 + mi) * 60 + sec) * 1000 + ms - offset)
+    if !valid {
+        return None;
+    }
+    match offset {
+        Some(offset) => Some(days_from_civil(y, mo, d) * 86_400_000 + ((h * 60 + mi) * 60 + sec) * 1000 - offset),
+        None => Some(local_ms(y, mo, d, h, mi, sec)),
+    }
+    .map(|t| t + ms)
 }
 
 fn fmt_time(ms: i64) -> String {
