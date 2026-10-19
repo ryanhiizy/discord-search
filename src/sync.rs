@@ -32,10 +32,11 @@ impl Response {
 /// GET url with the given Authorization header value.
 pub type Fetch = dyn Fn(&str, &str) -> Result<Response, String> + Sync;
 
-/// HTTPS via the system curl; the token goes through stdin, never argv.
+/// HTTPS via the system curl; the token goes through stdin, never argv. -q skips ~/.curlrc,
+/// which could disable TLS checks or turn HTTP errors into exit codes.
 pub fn curl(url: &str, auth: &str) -> Result<Response, String> {
     let mut child = Command::new("curl")
-        .args(["-sSi", "--compressed", "--max-time", "60", "--config", "-", url])
+        .args(["-q", "-sSi", "--compressed", "--max-time", "60", "--config", "-", url])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
