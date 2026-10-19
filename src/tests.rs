@@ -5,7 +5,7 @@ use serde_json::{Map, Value, json};
 use std::sync::{Arc, Mutex};
 
 fn t0() -> i64 {
-    parse_iso("2026-01-01T00:00:00Z").unwrap()
+    parse_iso("2026-01-01T00:00:00").unwrap() // local, so printed times match in any zone
 }
 fn sid(minutes: i64) -> String {
     (ms_to_id(t0() + minutes * 60000).unwrap() + 1).to_string()
@@ -164,7 +164,7 @@ fn search_ranking_stemming_filters_context_links() {
     matches(&s(json!({ "channel": "help" })), "crash-log"); // channel filter includes threads
     matches(&s(json!({ "channel": "nope" })), r#"No channel "nope". Channels: .*general"#);
     matches(&s(json!({ "author": "bob" })), "^1 results");
-    matches(&s(json!({ "query": "deploy", "after": "2026-01-01T03:00Z" })), "^1 results");
+    matches(&s(json!({ "query": "deploy", "after": "2026-01-01T03:00" })), "^1 results");
     matches(
         &s(json!({ "channel": "#general", "sort": "oldest", "limit": 2 })),
         r"^2\+ results, oldest[\s\S]*chatter 0\n\n[\s\S]*chatter 1$",
