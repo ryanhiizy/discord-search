@@ -101,6 +101,11 @@ pub fn insert_messages(db: &Connection, rows: &[NewMessage]) -> Result<usize, Er
     Ok(added)
 }
 
+/// Whitespace as JS `trim` and `\s` see it: Unicode White_Space plus the BOM.
+pub fn js_trim(s: &str) -> &str {
+    s.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
+}
+
 pub fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
 }
@@ -221,7 +226,7 @@ fn bound(value: &str, name: &str) -> Result<i64, Error> {
 
 /// Free text that is not valid FTS5 becomes an AND of quoted terms.
 fn to_plain_query(q: &str) -> String {
-    q.split_whitespace()
+    q.split(|c: char| c.is_whitespace() || c == '\u{feff}')
         .map(|t| t.replace('"', ""))
         .filter(|t| !t.is_empty())
         .map(|t| format!("\"{t}\""))
@@ -243,7 +248,7 @@ fn arg(args: &Map<String, Value>, key: &str) -> Option<String> {
 fn int_arg(args: &Map<String, Value>, key: &str, fallback: f64, lo: f64, hi: f64) -> i64 {
     let n = match args.get(key) {
         Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
-        Some(Value::String(s)) => s.trim().parse().unwrap_or(if s.trim().is_empty() { 0.0 } else { f64::NAN }),
+        Some(Value::String(s)) => js_trim(s).parse().unwrap_or(if js_trim(s).is_empty() { 0.0 } else { f64::NAN }),
         Some(Value::Bool(b)) => f64::from(u8::from(*b)),
         _ => f64::NAN,
     };
@@ -345,7 +350,7 @@ pub fn search(db: &Connection, args: &Map<String, Value>) -> Result<String, Erro
     }
 
     let limit = int_arg(args, "limit", 20.0, 1.0, 200.0);
-    let query = arg(args, "query").map(|q| q.trim().to_string()).filter(|q| !q.is_empty());
+    let query = arg(args, "query").map(|q| js_trim(&q).to_string()).filter(|q| !q.is_empty());
     let sort_arg = arg(args, "sort");
     let sort = match (&query, sort_arg.as_deref()) {
         (Some(_), s) => s.unwrap_or("relevance").to_string(),

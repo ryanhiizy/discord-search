@@ -50,7 +50,7 @@ fn sync_now(budget_ms: i64) -> Result<String, Error> {
     let token = std::env::var("DISCORD_TOKEN")
         .ok()
         .filter(|t| !t.is_empty())
-        .or_else(|| std::fs::read_to_string(token_path()).ok().map(|t| t.trim().to_string()))
+        .or_else(|| std::fs::read_to_string(token_path()).ok().map(|t| store::js_trim(&t).to_string()))
         .filter(|t| !t.is_empty())
         .ok_or_else(|| Error(format!("No bot token: set DISCORD_TOKEN or write it to {}.", token_path())))?;
     sync::sync(db()?, &sync::Client::new(&token, &sync::curl), budget_ms)
@@ -159,7 +159,7 @@ fn main() {
     let mut syncs = Vec::new();
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { break };
-        if line.trim().is_empty() {
+        if store::js_trim(&line).is_empty() {
             continue;
         }
         let Ok(msg) = serde_json::from_str::<Value>(&line) else {
