@@ -242,3 +242,11 @@ fn malformed_message_page_keeps_the_cursor() {
         db.lock().unwrap().query_row("SELECT cursor FROM channels WHERE id = 11", [], |r| r.get(0)).unwrap();
     assert_eq!(cursor, 0);
 }
+
+#[test]
+fn bom_counts_as_whitespace() {
+    let db = Mutex::new(open(":memory:").unwrap());
+    let (_, fetch) = fake_discord();
+    sync(&db, &Client::new("x", &fetch), 50_000).unwrap();
+    matches(&search(&db.lock().unwrap(), &args(json!({ "query": "\u{feff}" }))).unwrap(), "^20\\+ results, newest");
+}
