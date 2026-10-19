@@ -8,7 +8,7 @@ fn t0() -> i64 {
     parse_iso("2026-01-01T00:00:00Z").unwrap()
 }
 fn sid(minutes: i64) -> String {
-    (ms_to_id(t0() + minutes * 60000) + 1).to_string()
+    (ms_to_id(t0() + minutes * 60000).unwrap() + 1).to_string()
 }
 
 #[track_caller]
@@ -170,7 +170,9 @@ fn search_ranking_stemming_filters_context_links() {
         r"^2\+ results, oldest[\s\S]*chatter 0\n\n[\s\S]*chatter 1$",
     );
     matches(&s(json!({ "query": "what's the deploy-status?" })), "invalid FTS5 syntax");
-    assert!(search(&db, &args(json!({ "after": "soon" }))).unwrap_err().0.contains("expected ISO date or message id"));
+    for bad in ["soon", "2100-01-01"] {
+        assert!(search(&db, &args(json!({ "after": bad }))).unwrap_err().0.contains("expected ISO date or message id"));
+    }
 }
 
 #[test]
@@ -219,6 +221,10 @@ fn iso_times() {
     assert_eq!(parse_iso("2026-01-02T00:00:00+00:00"), parse_iso("2026-01-02T10:00+10:00"));
     assert_eq!(parse_iso("1970-01-01T00:00:01.5Z"), Some(1500));
     assert_eq!(parse_iso("2026-13-01"), None);
+    assert_eq!(parse_iso("2026-01-01T24:00Z"), parse_iso("2026-01-02"));
+    for bad in ["2026-01-01T24:01Z", "2026-01-01T00:00+24:00", "2026-01-01T00:00+00:60"] {
+        assert_eq!(parse_iso(bad), None, "{bad}");
+    }
 }
 
 #[test]
