@@ -138,21 +138,28 @@ pub fn iso(ms: i64) -> String {
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}.{f:03}Z")
 }
 
+type Wall = (i32, i32, i32, i32, i32, i32);
+
+/// The local wall-clock time (tm fields: years since 1900, 0-based month) at a Unix time.
+fn wall_of(t: libc::time_t) -> Wall {
+    // SAFETY: tm is plain data that localtime_r fills.
+    unsafe {
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&t, &mut tm);
+        (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec)
+    }
+}
+
 /// Wall-clock time in the local zone, as JS reads it: a time repeated when clocks go back
 /// is the earlier instant.
 fn local_ms(y: i64, mo: i64, d: i64, h: i64, mi: i64, sec: i64) -> i64 {
-    let wall = (y as i32 - 1900, mo as i32 - 1, d as i32, h as i32, mi as i32, sec as i32);
-    // SAFETY: tm is plain data; mktime and localtime_r only read and fill it.
+    let wall: Wall = (y as i32 - 1900, mo as i32 - 1, d as i32, h as i32, mi as i32, sec as i32);
+    // SAFETY: tm is plain data that mktime reads and normalizes.
     let at = |isdst| unsafe {
         let mut tm: libc::tm = std::mem::zeroed();
         (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec) = wall;
         tm.tm_isdst = isdst;
         libc::mktime(&mut tm) // -1 is a real time here: 4-digit years cannot overflow time_t
-    };
-    let wall_of = |t| unsafe {
-        let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&t, &mut tm);
-        (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec)
     };
     let (any, dst) = (at(-1), at(1));
     let t = if dst < any && wall_of(dst) == wall { dst } else { any };
@@ -222,8 +229,10 @@ pub fn parse_iso(s: &str) -> Option<i64> {
     .map(|t| t + ms)
 }
 
+/// Local time, e.g. 2026-01-01 09:30.
 fn fmt_time(ms: i64) -> String {
-    iso(ms)[..16].replace('T', " ")
+    let (y, mo, d, h, mi, _) = wall_of(ms.div_euclid(1000));
+    format!("{:04}-{:02}-{d:02} {h:02}:{mi:02}", y + 1900, mo + 1)
 }
 
 fn round(x: f64) -> i64 {
