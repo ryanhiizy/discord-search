@@ -168,7 +168,12 @@ fn main() {
         };
         let Some(id) = msg.get("id").cloned() else { continue }; // notification
         if msg["method"] == "tools/call" && msg["params"]["name"] == "discord_sync" {
-            syncs.push(std::thread::spawn(move || send(&reply(&id, handle(&msg)))));
+            syncs.retain(|s: &std::thread::JoinHandle<()>| !s.is_finished()); // dropping detaches and frees them
+            let job = (id.clone(), msg.clone());
+            match std::thread::Builder::new().spawn(move || send(&reply(&job.0, handle(&job.1)))) {
+                Ok(sync) => syncs.push(sync),
+                Err(_) => send(&reply(&id, handle(&msg))),
+            }
         } else {
             send(&reply(&id, handle(&msg)));
         }
